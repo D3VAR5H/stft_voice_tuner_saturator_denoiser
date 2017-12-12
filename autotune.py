@@ -12,14 +12,17 @@
 #
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+
+import gc
+gc.enable()
 import sys, random, struct
 from copy import copy
 from math import floor,ceil,pi,sin,cos,hypot,asin,atan,exp
 from scipy import signal,interpolate,fftpack
 from operator import attrgetter
-#import png
 import numpy as np
 import matplotlib.pyplot as plt
+from time import sleep
 yr=4096
 ffb=8192
 yr2 = (ffb>>1)+1
@@ -33,10 +36,7 @@ freqarray=np.asarray([(2**((nt/(yr-1)*notemax-57)/12))*440 for nt in range(yr-1,
 binarray=np.asarray([nt/(yr2-1)*freq for nt in range(yr2)],dtype=np.float32)
 fmm=[nt/(yr-1)*notemax for nt in range(yr-1,-1,-1)]
 fmmi=[int((nt/notemax)*(yr-1)+.5) for nt in range(notemax,-1,-1)]#was melarray
-smlp=0
-cmlp=0
 def melPeak(line):
-    global cmlp,smlp
     #checking for data
     mn=line.mean()
     rest=np.sum(line-mn)
@@ -46,8 +46,6 @@ def melPeak(line):
     thresh=line[:int((len(line)-1)*.75)].mean()
     for i,b in zip(range(int((len(line)-1)*.75),-1,-1),line[::-1]):
         if b>=thresh:
-            cmlp+=1
-            smlp+=b
             return i
     return None
 def rootkey(rk):
@@ -69,8 +67,11 @@ def oct_stats(octave):
         if item not in rk:
             ofx[item] = None
     return res, ofx
-def melOctave(lpks):
+def getlpks(oclw):
+    return [melPeak(line) for line in oclw.T]
+def melOctave(oclw):
     global fmm
+    lpks=getlpks(oclw)
     octave=[0,0,0,0,0,0,0,0,0,0,0,0]
     for b in lpks:
         if b is not None:
@@ -78,28 +79,19 @@ def melOctave(lpks):
             octave[nt%12]+=1
     ocst,ofx=oct_stats(octave)
     return ocst,ofx
+def getsmoothlpks(oclw,n):
+    n2=n*n
+    kernel=np.asarray([[1/n2]*n2],dtype=np.complex64)
+    img2=signal.convolve(oclw.astype(np.complex64),kernel,mode='same')
+    lpks=getlpks(img2)
+    return lpks
 def fixVocMels(oclw):
     global fmm,fmmi
-    global cmlp,smlp
-    ocll=oclw.T
-    lpks=[]
-    for line in ocll:
-        lpk=melPeak(line)
-        lpks.append(lpk)
-    print('avg peak',smlp/cmlp)
-    ocst,ofxs=melOctave(lpks)
+    ocst,ofxs=melOctave(oclw)
     ofx=list(ofxs)
     print(ocst,ofx)
-    #here blur
-    n=4
-    n2=n*n
-    kernel=[[1/n2]*n2]
-    img2=signal.convolve(oclw,kernel,mode='same').T
-    lpks=[]
-    for line in img2:
-        lpk=melPeak(line)
-        lpks.append(lpk)
-    del img2
+    lpks=getsmoothlpks(oclw,4)
+    ocll=oclw.T
     p=0
     for i,lpk in enumerate(lpks):
         if lpk is not None:
@@ -131,8 +123,6 @@ def fixVocMels(oclw):
                 print('madness')
                 continue
     print(p,len(lpks))
-    #plt.imshow(img2,cmap='gray')
-    #plt.show()
     return ocll.T
 ################################FFT
 def nonlocmax(x,y,z,plane):
@@ -163,15 +153,26 @@ def peak(m):
     r[i]=m[i]
     r[-i]=m[-i]
     return r
+def interp2d(im,wt,wf,nt,nf):
+    spl=interpolate.interp2d(wt,wf,im)
+    imn=spl(nt,nf)
+    return imn
+def interp2dcomplex(im,wt,wf,nt,nf):
+    real_data=interp2d(im.real,wt,wf,nt,nf)
+    imag_data=interp2d(im.imag,wt,wf,nt,nf)*1j
+    return real_data+imag_data
 def make_spectrogram(wave,filesr,noise,noisesr,synthsr,synthfreq):
     global yr2,ffb,win,nps,nol,freqarray
     ffttr=signal.stft(wave,filesr,window='blackmanharris',nperseg=int(nps*filesr/synthsr),noverlap=int(nol*filesr/synthsr),nfft=int(ffb*filesr/synthsr),return_onesided=True)
     ns=signal.stft(noise,noisesr,window='blackmanharris',nperseg=int(nps*noisesr/synthsr),noverlap=int(nol*noisesr/synthsr),nfft=int(ffb*noisesr/synthsr),return_onesided=True)
     nsp=np.log(np.pad(ns[2][:ffttr[2].shape[0]],(0,max(0,ffttr[2].shape[0]-ns[2].shape[0])), 'constant', constant_values=(0, 0))+1e-240)
     nsmn=np.mean(nsp,axis=1)
+    del ns,nsp
     im_data=ffttr[2]
     binarray=ffttr[0]
-    dur=np.max(ffttr[1])
+    wt=ffttr[1]
+    dur=np.max(wt)
+    del ffttr
     im_data[:8]=0
     im_data[:,:2]=0
     im_data[:,-2:]=0
@@ -181,12 +182,11 @@ def make_spectrogram(wave,filesr,noise,noisesr,synthsr,synthfreq):
     im_data*=8#8
     im_data-=im_data.max()
     im_data[im_data<-8]=-241
-    spl=interpolate.interp2d(ffttr[1],binarray,im_data.real)
-    real_data=spl(np.arange(0,dur,3/100),freqarray)
-    spl=interpolate.interp2d(ffttr[1],binarray,im_data.imag)
-    im_data=real_data+1j*spl(np.arange(0,dur,3/100),freqarray)
+    im_data=interp2dcomplex(im_data,wt,binarray,np.arange(0,dur,3/100),freqarray)
+    del binarray,dur
     im_data=np.exp(im_data)+1e-240
     im_data=im_data[::-1]
+    gc.collect()
     im_data=fixVocMels(im_data)
     return im_data
 def dynamicIncr(bar):
@@ -199,20 +199,20 @@ def dynamicIncr(bar):
     return bar2
 def gen_wave(in_data):
     global ffb,win,nps,nol,freqarray,freq,yr,binarray,sr
-    im_data=in_data
     im_data=np.log(in_data+1e-239)
-    spl=interpolate.interp2d(np.arange(0,im_data.shape[1],1),freqarray,im_data.real)
-    real_data=spl(np.arange(0,im_data.shape[1],1*nps/sr/4*100/3),binarray)
-    spl=interpolate.interp2d(np.arange(0,im_data.shape[1],1),freqarray,im_data.imag)
-    im_data=real_data+1j*spl(np.arange(0,im_data.shape[1],1*nps/sr/4*100/3),binarray)
+    del in_data
+    im_data=interp2dcomplex(im_data,np.arange(0,im_data.shape[1],1),freqarray,np.arange(0,im_data.shape[1],1*nps/sr/4*100/3),binarray)
     im_data-=im_data.max()+2
     im_data=np.exp(im_data)-1e-239
     eq=np.concatenate((np.full(800,1.0),(np.arange(800,4097)-4096)/(800-4097)))**3
     saturation=np.asarray([fftpack.ifft(dynamicIncr(fftpack.fft(b)))*eq for b in im_data.T],dtype=im_data.dtype).T
+    del eq
     im_data=(im_data*3+saturation)/4
+    del saturation
     im_data=np.log(im_data+1e-239)
     im_data-=im_data.max()+2
     im_data=np.exp(im_data)-1e-239
+    gc.collect()
     res=signal.istft(im_data,window=win,input_onesided=True,noverlap=nol,nperseg=nps,nfft=ffb)[1]
     return res
 ################################IO
@@ -279,55 +279,9 @@ def write_wave(filename,wave,sr):
     wav.write(wave)
     wav.close()
 instrument=make_spectrogram(*load_wav("sng.wav"),*load_wav("sngnoise.wav"),sr,freq)
-im_data=instrument
-im_data = np.sqrt(im_data.real**2+im_data.imag**2)
-im_data-=np.min(im_data)
-im_data/=np.max(im_data)
-im_data=np.log(im_data+1e-12)
-im_data-=np.min(im_data)/3
-im_data/=np.max(im_data)
-im_data[im_data<=0]=0
-im_data-=1
-im_data*=np.e
-im_data=np.exp(im_data)
-im_data-=np.min(im_data)
-im_data/=np.max(im_data)
-im=(im_data*255).astype(np.uint8)
-#file = open('voice.png', 'wb')
-#xa, yb = im.shape
-#w = png.Writer(yb, xa, greyscale=True)
-#w.write(file, im)
-#file.close()
-#print('wrote png')
-
-def spread(cur,cnt):
-    cur/=cnt
-    sign=[-1,1][cur>0]
-    noise=int(cnt/(1/abs(cur)+1))
-    signal=cnt-noise
-    ret=[sign]*signal+[-sign]*noise
-    return ret
-def write_pdm(filename,wave,sr):
-    wave=wave.real
-    l=-np.min(wave)
-    h=np.max(wave)
-    a=max(l,h)
-    wave/=a
-    thresh=1/63
-    cur=wave[0]
-    cnt=1
-    quanted=[]
-    for p in wave[1:]:
-        if abs(p-(cur/cnt))<thresh:
-            cur+=p
-            cnt+=1
-        else:
-            #print(cnt,cur/cnt)
-            quanted+=spread(cur,cnt)#[cur/cnt]*cnt
-            cur=p
-            cnt=1
-    write_wave(filename,quanted,sr)
+gc.collect()
 wv=gen_wave(instrument)
+gc.collect()
+del instrument
 write_wave('vcp13.wav',wv,sr)
-#write_pdm('vcpdm.wav',wv,sr)
 print('wrote wav')
