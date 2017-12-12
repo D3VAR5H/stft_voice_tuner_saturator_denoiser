@@ -164,15 +164,15 @@ def interp2dcomplex(im,wt,wf,nt,nf):
 def make_spectrogram(wave,filesr,noise,noisesr,synthsr,synthfreq):
     global yr2,ffb,win,nps,nol,freqarray
     ffttr=signal.stft(wave,filesr,window='blackmanharris',nperseg=int(nps*filesr/synthsr),noverlap=int(nol*filesr/synthsr),nfft=int(ffb*filesr/synthsr),return_onesided=True)
-    ns=signal.stft(noise,noisesr,window='blackmanharris',nperseg=int(nps*noisesr/synthsr),noverlap=int(nol*noisesr/synthsr),nfft=int(ffb*noisesr/synthsr),return_onesided=True)
-    nsp=np.log(np.pad(ns[2][:ffttr[2].shape[0]],(0,max(0,ffttr[2].shape[0]-ns[2].shape[0])), 'constant', constant_values=(0, 0))+1e-240)
-    nsmn=np.mean(nsp,axis=1)
-    del ns,nsp
-    im_data=ffttr[2]
-    binarray=ffttr[0]
+    im_data=ffttr[2][:yr2]
+    binarray=ffttr[0][:yr2]
     wt=ffttr[1]
     dur=np.max(wt)
     del ffttr
+    ns=signal.stft(noise,noisesr,window='blackmanharris',nperseg=int(nps*noisesr/synthsr),noverlap=int(nol*noisesr/synthsr),nfft=int(ffb*noisesr/synthsr),return_onesided=True)
+    nsp=np.log(np.pad(ns[2][:im_data.shape[0]],(0,max(0,im_data.shape[0]-ns[2].shape[0])), 'constant', constant_values=(0, 0))+1e-240)
+    nsmn=np.mean(nsp,axis=1)
+    del ns,nsp
     im_data[:8]=0
     im_data[:,:2]=0
     im_data[:,-2:]=0
