@@ -17,7 +17,7 @@ from copy import copy
 from math import floor,ceil,pi,sin,cos,hypot,asin,atan,exp
 from scipy import signal,interpolate,fftpack
 from operator import attrgetter
-import png
+#import png
 import numpy as np
 import matplotlib.pyplot as plt
 yr=4096
@@ -27,7 +27,7 @@ nps=ffb
 nol=nps-nps//4
 win='blackmanharris'
 sr=48000#change to 32000 if you want Virtual ANS compatibility
-notemax=119#127#change to 119 if you want Virtual ANS compatibility
+notemax=127#127#change to 119 if you want Virtual ANS compatibility
 freq=sr>>1
 freqarray=np.asarray([(2**((nt/(yr-1)*notemax-57)/12))*440 for nt in range(yr-1,-1,-1)],dtype=np.float32)
 binarray=np.asarray([nt/(yr2-1)*freq for nt in range(yr2)],dtype=np.float32)
@@ -292,12 +292,12 @@ im_data=np.exp(im_data)
 im_data-=np.min(im_data)
 im_data/=np.max(im_data)
 im=(im_data*255).astype(np.uint8)
-file = open('voice.png', 'wb')
-xa, yb = im.shape
-w = png.Writer(yb, xa, greyscale=True)
-w.write(file, im)
-file.close()
-print('wrote png')
+#file = open('voice.png', 'wb')
+#xa, yb = im.shape
+#w = png.Writer(yb, xa, greyscale=True)
+#w.write(file, im)
+#file.close()
+#print('wrote png')
 
 def spread(cur,cnt):
     cur/=cnt
