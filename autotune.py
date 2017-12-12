@@ -40,7 +40,7 @@ def melPeak(line):
     #checking for data
     mn=line.mean()
     rest=np.sum(line-mn)
-    if mgn(rest)<1e-17:
+    if mgn(rest)<2e-17:
         #print(mgn(rest),rest)
         return None
     thresh=line[:int((len(line)-1)*.75)].mean()
@@ -180,6 +180,7 @@ def make_spectrogram(wave,filesr,noise,noisesr,synthsr,synthfreq):
     im_data/=-nsmn[:,None]
     im_data*=8#8
     im_data-=im_data.max()
+    im_data[im_data<-8]=-241
     spl=interpolate.interp2d(ffttr[1],binarray,im_data.real)
     real_data=spl(np.arange(0,dur,3/100),freqarray)
     spl=interpolate.interp2d(ffttr[1],binarray,im_data.imag)
