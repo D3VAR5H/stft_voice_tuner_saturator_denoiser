@@ -101,9 +101,12 @@ def fixVocMels(oclw):
             if pn is None:
                pn=int(n-1)
             if ofxs[int(n)-1] is None:
-                ofx[int(n)-1]=pn
+                if pn==0:
+                    ofx[int(n)-1]=12
+                else:
+                    ofx[int(n)-1]=pn
             if ofxs[(int(n)+1)%12] is None:
-                ofx[(int(n)+1)%12]=pn
+                ofx[(int(n)+1)%12]=pn%12
             nt=int(o*12+pn)
             f=fmmi[nt]
             df=f-lpk
